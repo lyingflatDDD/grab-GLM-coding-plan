@@ -278,6 +278,57 @@
     }
   }
 
+  // 多策略查找验证码确认按钮
+  function findCaptchaConfirmBtn(wrapper) {
+    // 策略1: 常见 class 选择器（包含 div 确认按钮）
+    const byClass = wrapper.querySelector(
+      '#tcaptcha-verify-btn, ' +
+      'a.tcaptcha-verify-btn, button.tcaptcha-verify-btn, .tcaptcha-verify-btn, ' +
+      '.tcaptcha-operation-btn, .tencent-captcha-dy__verify-btn, ' +
+      '.tencent-captcha-dy__verify-confirm-btn, ' +
+      'a[class*="verify-btn"], button[class*="verify-btn"], ' +
+      'div[class*="confirm-btn"], a[class*="confirm"], button[class*="confirm"]'
+    );
+    if (byClass) return byClass;
+
+    // 策略2: 包含"确认/确定"文本的可点击元素（含 div）
+    const clickables = wrapper.querySelectorAll('a, button, div, [role="button"]');
+    for (const el of clickables) {
+      const t = (el.textContent || '').trim();
+      if (t === '确认' || t === '确定' || t === '提交' || t === '验证') {
+        return el;
+      }
+    }
+
+    // 策略3: 底部区域的可点击元素（验证码确认按钮总在底部）
+    const rect = wrapper.getBoundingClientRect();
+    const bottomThreshold = rect.top + rect.height * 0.7;
+    const allEls = wrapper.querySelectorAll('*');
+    for (const el of allEls) {
+      if (el.tagName !== 'A' && el.tagName !== 'BUTTON' && el.getAttribute('role') !== 'button') continue;
+      const elRect = el.getBoundingClientRect();
+      if (elRect.top > bottomThreshold && elRect.width > 30 && elRect.height > 15) {
+        return el;
+      }
+    }
+
+    return null;
+  }
+
+  // 关闭验证码弹窗（点击关闭按钮）
+  function closeCaptcha() {
+    const wrapper = document.getElementById(CAPTCHA_WRAPPER_ID);
+    if (!wrapper) return false;
+    const closeBtn = wrapper.querySelector('.tcaptcha-close-btn, a.tcaptcha-operation-btn, .tcaptcha-action-close, [class*="close"]') ||
+                     wrapper.querySelector('[aria-label="关闭"]');
+    if (closeBtn) {
+      dispatchRealClick(closeBtn);
+      log('已关闭验证码弹窗');
+      return true;
+    }
+    return false;
+  }
+
   async function solveCaptchaViaOCR() {
     try {
       const wrapper = document.getElementById(CAPTCHA_WRAPPER_ID);
@@ -300,9 +351,12 @@
       let base64Data = null;
       let clickTarget = wrapper;
 
+      // 定位图片区域容器（点击目标的坐标基准）
+      const imageArea = wrapper.querySelector('.tencent-captcha-dy__image-area');
+
       // 策略1: 从背景图 div 提取 URL（腾讯验证码的主图是 div 背景图）
-      const bgDiv = wrapper.querySelector('.tencent-captcha-dy__verify-bg-img') ||
-                    wrapper.querySelector('div[style*="background"]');
+      const bgDiv = (imageArea || wrapper).querySelector('.tencent-captcha-dy__verify-bg-img') ||
+                    (imageArea || wrapper).querySelector('div[style*="background"]');
       if (bgDiv) {
         const style = bgDiv.getAttribute('style') || '';
         const m = style.match(/url\(["']?(.+?)["']?\)/);
@@ -312,6 +366,7 @@
       // 策略2: 使用拦截捕获的图片
       if (!imgSrc && capturedCaptchaImage && capturedCaptchaImage.src) {
         imgSrc = capturedCaptchaImage.src;
+        if (imageArea) clickTarget = imageArea;
       }
 
       // 策略3: 在容器中查找 img 元素
@@ -388,15 +443,21 @@
         const clickY = bgRect.top + p.y_rel * scaleY;
         log(`点击第 ${i + 1} 个目标: (${Math.round(clickX)}, ${Math.round(clickY)})`);
         dispatchRealClickAtPoint(clickX, clickY);
-        await sleep(800);
+        await sleep(300);
       }
 
-      // 点击确认按钮
-      await sleep(500);
-      const confirmBtn = wrapper.querySelector('a.tcaptcha-verify-btn, button.tcaptcha-verify-btn, .tcaptcha-verify-btn');
+      // 识别成功，直接点确认按钮（用坐标点击，确认按钮是 div 不响应 .click()）
+      const confirmBtn = findCaptchaConfirmBtn(wrapper);
       if (confirmBtn) {
-        confirmBtn.click();
-        log('已点击验证码确认按钮');
+        const btnRect = confirmBtn.getBoundingClientRect();
+        const btnX = btnRect.left + btnRect.width / 2;
+        const btnY = btnRect.top + btnRect.height / 2;
+        log('点击确认按钮: ' + confirmBtn.className.substring(0, 60) + ` (${Math.round(btnX)}, ${Math.round(btnY)})`);
+        dispatchRealClickAtPoint(btnX, btnY);
+      } else {
+        log('未找到确认按钮，点击 image-area 下方区域');
+        const areaRect = (imageArea || wrapper).getBoundingClientRect();
+        dispatchRealClickAtPoint(areaRect.left + areaRect.width / 2, areaRect.bottom + 25);
       }
 
       capturedCaptchaImage = null;
@@ -762,13 +823,20 @@
             log('验证码界面消失，识别成功');
             isWaitingCaptcha = false;
           } else {
-            log('验证码仍在，可能识别有误，将重试');
+            log('验证码仍在，识别可能失败，关闭验证码重新触发');
+            closeCaptcha();
+            isWaitingCaptcha = false;
+            capturedCaptchaImage = null;
+            await sleep(500);
           }
         } else {
-          log('自动识别失败，等待 3 秒后重试');
-          await sleep(3000);
+          log('自动识别失败，关闭验证码重新触发购买流程');
+          closeCaptcha();
+          isWaitingCaptcha = false;
+          capturedCaptchaImage = null;
+          await sleep(500);
         }
-        scheduleNextTick(500);
+        scheduleNextTick(100);
         return;
       } else {
         log('验证码界面消失，准备继续流程');

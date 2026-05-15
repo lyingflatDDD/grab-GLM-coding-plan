@@ -18,7 +18,8 @@ s = time.time()
 cap = TextSelectCaptcha()
 print("加载模型耗时：", time.time() - s)
 
-image_path = "docs/res.jpg"
+
+image_path = "docs/cap_union_new_getcapbysig.png"
 s = time.time()
 
 result = cap.run(image_path)

@@ -39,12 +39,17 @@ print("成功加载识别模型！")
 
 async def fetch(url):
     timeout = aiohttp.ClientTimeout(
-        total=10,  # 请求的总超时（秒）
-        connect=5,  # 连接超时（秒）
-        sock_read=5,  # 套接字读取超时（秒）
-        sock_connect=5  # 套接字连接超时（秒）
+        total=10,
+        connect=5,
+        sock_read=5,
+        sock_connect=5
     )
-    async with aiohttp.ClientSession() as session:
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Referer": "https://bigmodel.cn/",
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    }
+    async with aiohttp.ClientSession(headers=headers) as session:
         async with session.get(url, ssl=False, timeout=timeout) as response:
             return await response.read()
 
@@ -91,7 +96,7 @@ def drow_img(image_path,result):
 async def run(item):
     imageID = item.imageID if item.imageID else ""
     imageSource = await set_imageSource(item.dataType, item.imageSource)
-    res = cap_model.run_dict(imageSource)
+    res = cap_model.run_dict(imageSource, click_text=item.clickText)
     return {"imageID": imageID, "res": res}
 
 

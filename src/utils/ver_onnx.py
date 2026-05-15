@@ -110,6 +110,8 @@ class PreONNX:
         """
         N = len(image_1_list)
         M = len(image_2_list)
+        if N == 0 or M == 0:
+            return []
         processed_1 = [preprocess_image(img) for img in image_1_list]
         processed_2 = [preprocess_image(img) for img in image_2_list]
         x1_list = []

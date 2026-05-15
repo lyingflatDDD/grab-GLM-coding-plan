@@ -1,10 +1,18 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import router as v1_router
 from app.utils.errors import BadRequestError, ServiceError
 
 def create_app() -> FastAPI:
     app = FastAPI(title="文字点选验证码识别服务", version="1.0.0")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.exception_handler(BadRequestError)
     async def bad_request_handler(request: Request, exc: BadRequestError):

@@ -31,4 +31,9 @@ class Input(BaseModel):
         example="string",
         description="图片名称或 id"
     )
+    clickText: Optional[str] = Field(
+        default=None,
+        example="豹 雹 澄",
+        description="验证码提示文字，如'豹 雹 澄'，用于辅助排序"
+    )
 

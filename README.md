@@ -77,7 +77,6 @@ python demo.py
 python service.py
 ```
 服务启动后访问 `http://127.0.0.1:8000/docs` 查看交互式 API 文档。
-
 **3. 消消乐验证码识别**
 
 ```bash

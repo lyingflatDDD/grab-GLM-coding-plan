@@ -13,7 +13,7 @@ import requests
 import json
 
 
-url = "http://localhost:8000/api/v1/identify"
+url = "http://localhost:8123/api/v1/identify"
 
 image_path = "docs/res.jpg"
 with open(image_path, 'rb') as f:

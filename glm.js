@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         GLM Coding 抢购助手 (增强版) v1.6
+// @name         GLM Coding 全自动抢购助手 (增强版) v1.0
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.0
 // @description  准点自动点击指定套餐，绕过限流，支持验证码等待与异常弹窗检测自动重试。
 // @author       Codex
 // @match        *://bigmodel.cn/glm-coding*

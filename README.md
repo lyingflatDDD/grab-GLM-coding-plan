@@ -2,6 +2,8 @@
 
 基于 [Text_select_captcha](https://github.com/MgArcher/Text_select_captcha) 验证码识别系统，通过油猴脚本实现 GLM Coding 套餐准点自动抢购，支持点选验证码自动识别。
 
+[拼好模打9.5折](https://www.bigmodel.cn/glm-coding?ic=CCQHLMSXTP)
+
 ## 功能
 
 - 准点自动点击指定套餐购买按钮

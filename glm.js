@@ -5,7 +5,7 @@
 // @description  准点自动点击指定套餐，绕过限流，支持验证码等待与异常弹窗检测自动重试。
 // @author       Codex
 // @match        *://bigmodel.cn/glm-coding*
-// @match        https://www.bigmodel.cn/glm-coding
+// @match        https://www.bigmodel.cn/glm-coding*
 // @match        *://bigmodel.cn/usercenter/glm-coding*
 // @match        *://bigmodel.cn/html/rate-limit.html*
 // @grant        GM_xmlhttpRequest
@@ -579,7 +579,7 @@
   // ==========================================
 
   const STORAGE_KEY = 'glm-simple-config-v16';
-  const WATCH_GRACE_MS = 5 * 60 * 1000;
+  const WATCH_GRACE_MS = 40 * 60 * 1000;
   const CYCLE_SETTLE_MS = 350;
   const SECOND_CLICK_DELAY_MS = 120;
   const DIALOG_RETRY_BASE_DELAY_MS = 350; // 已缩短，加速重试

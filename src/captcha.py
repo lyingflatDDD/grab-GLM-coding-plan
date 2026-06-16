@@ -9,6 +9,7 @@
 # Description：
 """
 import os
+import sys
 import numpy as np
 from typing import List, Dict, Any, Optional
 from PIL import Image, ImageDraw, ImageFont
@@ -18,14 +19,66 @@ from src.utils import yolo_onnx
 from src.utils import matchingMode
 
 
+def _find_cjk_font(size: int) -> ImageFont.FreeTypeFont:
+    """跨平台查找支持中文的字体，返回 PIL Font 对象"""
+    # 按优先级排列的候选字体路径（覆盖 Windows / macOS / Linux 常见中文字体）
+    candidates = []
+
+    if sys.platform == 'win32':
+        windir = os.environ.get('WINDIR', r'C:\Windows')
+        fonts_dir = os.path.join(windir, 'Fonts')
+        candidates = [
+            os.path.join(fonts_dir, 'msyh.ttc'),       # 微软雅黑 常规
+            os.path.join(fonts_dir, 'msyhbd.ttc'),      # 微软雅黑 粗体
+            os.path.join(fonts_dir, 'simhei.ttf'),      # 黑体
+            os.path.join(fonts_dir, 'simsun.ttc'),      # 宋体
+            os.path.join(fonts_dir, 'simfang.ttf'),     # 仿宋
+            os.path.join(fonts_dir, 'STKAITI.TTF'),     # 楷体
+        ]
+    elif sys.platform == 'darwin':
+        candidates = [
+            '/System/Library/Fonts/PingFang.ttc',
+            '/System/Library/Fonts/STHeiti Light.ttc',
+            '/System/Library/Fonts/Hiragino Sans GB.ttc',
+            '/Library/Fonts/Arial Unicode.ttf',
+        ]
+    else:  # Linux
+        candidates = [
+            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc',
+            '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+            '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
+        ]
+
+    for font_path in candidates:
+        if os.path.isfile(font_path):
+            try:
+                return ImageFont.truetype(font_path, size)
+            except (OSError, IOError):
+                continue
+
+    # 最后兜底：尝试系统默认
+    try:
+        return ImageFont.truetype('sans-serif', size)
+    except (OSError, IOError):
+        pass
+
+    # 全部失败，使用默认字体（可能不支持中文）
+    import warnings
+    warnings.warn(
+        "未找到支持中文的字体，字符渲染可能为空白，建议安装中文字体（Windows: 微软雅黑；Linux: NotoSansCJK）",
+        RuntimeWarning
+    )
+    return ImageFont.load_default()
+
+
 def _render_char(char: str, size: int = 48) -> np.ndarray:
     """将单个字符渲染为白底黑字图片，返回 BGR numpy 数组"""
     img = Image.new('RGB', (size, size), (255, 255, 255))
     draw = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.truetype("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", size - 8)
-    except OSError:
-        font = ImageFont.load_default()
+    font = _find_cjk_font(size - 8)
     bbox = draw.textbbox((0, 0), char, font=font)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     draw.text(((size - tw) / 2, (size - th) / 2 - bbox[1]), char, fill=(0, 0, 0), font=font)
@@ -34,10 +87,9 @@ def _render_char(char: str, size: int = 48) -> np.ndarray:
 
 class TextSelectCaptcha(object):
     def __init__(self, per_path: str = 'pre_model_v7.onnx', yolo_path: str = 'best_v3.onnx') -> None:
-        save_path = os.path.join(os.path.dirname(__file__), '../model')
-        path = lambda a, b: os.path.join(a, b)
-        per_path = path(save_path, per_path)
-        yolo_path = path(save_path, yolo_path)
+        save_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'model'))
+        per_path = os.path.join(save_path, per_path)
+        yolo_path = os.path.join(save_path, yolo_path)
         self.yolo = yolo_onnx.YOLO(yolo_path)
         self.pre = ver_onnx.PreONNX(per_path)
 

@@ -198,10 +198,9 @@ def _render_char(char: str, size: int = 48) -> np.ndarray:
 
 class TextSelectCaptcha(object):
     def __init__(self, per_path: str = 'pre_model_v7.onnx', yolo_path: str = 'best_v3.onnx') -> None:
-        save_path = os.path.join(os.path.dirname(__file__), '../model')
-        path = lambda a, b: os.path.join(a, b)
-        per_path = path(save_path, per_path)
-        yolo_path = path(save_path, yolo_path)
+        save_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'model'))
+        per_path = os.path.join(save_path, per_path)
+        yolo_path = os.path.join(save_path, yolo_path)
         self.yolo = yolo_onnx.YOLO(yolo_path)
         self.pre = ver_onnx.PreONNX(per_path)
 

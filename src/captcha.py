@@ -9,7 +9,9 @@
 # Description：
 """
 import os
-import sys
+import warnings
+from functools import lru_cache
+from pathlib import Path
 import numpy as np
 from typing import List, Dict, Any, Optional
 from PIL import Image, ImageDraw, ImageFont
@@ -19,66 +21,175 @@ from src.utils import yolo_onnx
 from src.utils import matchingMode
 
 
-def _find_cjk_font(size: int) -> ImageFont.FreeTypeFont:
-    """跨平台查找支持中文的字体，返回 PIL Font 对象"""
-    # 按优先级排列的候选字体路径（覆盖 Windows / macOS / Linux 常见中文字体）
-    candidates = []
+FONT_EXTENSIONS = {'.ttf', '.ttc', '.otf'}
+FONT_NAME_KEYWORDS = [
+    'noto sans cjk',
+    'notosanscjk',
+    'noto serif cjk',
+    'notoserifcjk',
+    'source han sans',
+    'sourcehansans',
+    'source han serif',
+    'sourcehanserif',
+    'pingfang',
+    'hiragino sans gb',
+    'microsoft yahei',
+    'msyh',
+    'simhei',
+    'simsun',
+    'deng',
+    'songti',
+    'stheiti',
+    'heiti',
+    'kaiti',
+    'mingliu',
+    'pmingliu',
+    'wqy',
+    'wenquanyi',
+    'droidsansfallback',
+    'ar pl',
+    'uming',
+    'ukai',
+    'arial unicode',
+    'sarasa',
+    'lxgw',
+]
 
-    if sys.platform == 'win32':
-        windir = os.environ.get('WINDIR', r'C:\Windows')
-        fonts_dir = os.path.join(windir, 'Fonts')
-        candidates = [
-            os.path.join(fonts_dir, 'msyh.ttc'),       # 微软雅黑 常规
-            os.path.join(fonts_dir, 'msyhbd.ttc'),      # 微软雅黑 粗体
-            os.path.join(fonts_dir, 'simhei.ttf'),      # 黑体
-            os.path.join(fonts_dir, 'simsun.ttc'),      # 宋体
-            os.path.join(fonts_dir, 'simfang.ttf'),     # 仿宋
-            os.path.join(fonts_dir, 'STKAITI.TTF'),     # 楷体
-        ]
-    elif sys.platform == 'darwin':
-        candidates = [
-            '/System/Library/Fonts/PingFang.ttc',
-            '/System/Library/Fonts/STHeiti Light.ttc',
-            '/System/Library/Fonts/Hiragino Sans GB.ttc',
-            '/Library/Fonts/Arial Unicode.ttf',
-        ]
-    else:  # Linux
-        candidates = [
-            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-            '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
-            '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
-            '/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc',
-            '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
-            '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
-        ]
 
-    for font_path in candidates:
-        if os.path.isfile(font_path):
-            try:
-                return ImageFont.truetype(font_path, size)
-            except (OSError, IOError):
-                continue
+def _clean_font_path(value: str) -> Optional[Path]:
+    value = value.strip().strip('"').strip("'")
+    if not value:
+        return None
+    return Path(value).expanduser()
 
-    # 最后兜底：尝试系统默认
-    try:
-        return ImageFont.truetype('sans-serif', size)
-    except (OSError, IOError):
-        pass
 
-    # 全部失败，使用默认字体（可能不支持中文）
-    import warnings
-    warnings.warn(
-        "未找到支持中文的字体，字符渲染可能为空白，建议安装中文字体（Windows: 微软雅黑；Linux: NotoSansCJK）",
-        RuntimeWarning
-    )
-    return ImageFont.load_default()
+def _iter_env_font_paths() -> List[Path]:
+    paths = []
+    for key in ('GLM_CODING_CJK_FONT', 'CAPTCHA_CJK_FONT'):
+        value = os.getenv(key)
+        if value:
+            path = _clean_font_path(value)
+            if path:
+                paths.append(path)
+    return paths
+
+
+def _iter_font_dirs() -> List[Path]:
+    dirs = []
+    for key in ('GLM_CODING_FONT_DIR', 'CAPTCHA_FONT_DIR'):
+        value = os.getenv(key)
+        if value:
+            path = _clean_font_path(value)
+            if path:
+                dirs.append(path)
+
+    dirs.extend([
+        # Linux and containers
+        Path('/usr/share/fonts'),
+        Path('/usr/local/share/fonts'),
+        Path.home() / '.fonts',
+        Path.home() / '.local/share/fonts',
+        # macOS
+        Path('/System/Library/Fonts'),
+        Path('/System/Library/Fonts/Supplemental'),
+        Path('/Library/Fonts'),
+        Path.home() / 'Library/Fonts',
+        # Windows
+        Path(os.getenv('WINDIR', 'C:/Windows')) / 'Fonts',
+        Path('C:/Windows/Fonts'),
+    ])
+    return dirs
+
+
+def _font_priority(path: Path) -> int:
+    name = path.name.lower().replace('-', ' ').replace('_', ' ')
+    for index, keyword in enumerate(FONT_NAME_KEYWORDS):
+        if keyword in name:
+            return index
+    return len(FONT_NAME_KEYWORDS)
+
+
+def _iter_explicit_font_candidates() -> List[Path]:
+    return [
+        # Linux
+        Path('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'),
+        Path('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf'),
+        Path('/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc'),
+        Path('/usr/share/fonts/truetype/noto/NotoSansCJKsc-Regular.otf'),
+        Path('/usr/share/fonts/opentype/source-han-sans/SourceHanSansCN-Regular.otf'),
+        Path('/usr/share/fonts/truetype/wqy/wqy-microhei.ttc'),
+        # macOS
+        Path('/System/Library/Fonts/PingFang.ttc'),
+        Path('/System/Library/Fonts/STHeiti Light.ttc'),
+        Path('/System/Library/Fonts/STHeiti Medium.ttc'),
+        Path('/System/Library/Fonts/Supplemental/Songti.ttc'),
+        Path('/System/Library/Fonts/Supplemental/Arial Unicode.ttf'),
+        # Windows
+        Path('C:/Windows/Fonts/msyh.ttc'),
+        Path('C:/Windows/Fonts/msyh.ttf'),
+        Path('C:/Windows/Fonts/simhei.ttf'),
+        Path('C:/Windows/Fonts/simsun.ttc'),
+        Path('C:/Windows/Fonts/Deng.ttf'),
+        Path('C:/Windows/Fonts/NotoSansCJK-Regular.ttc'),
+    ]
+
+
+def _iter_scanned_font_candidates() -> List[Path]:
+    seen = set()
+    scanned = []
+    for font_dir in _iter_font_dirs():
+        if not font_dir.is_dir():
+            continue
+        try:
+            for path in font_dir.rglob('*'):
+                if path.suffix.lower() not in FONT_EXTENSIONS:
+                    continue
+                if _font_priority(path) >= len(FONT_NAME_KEYWORDS):
+                    continue
+                if path not in seen:
+                    seen.add(path)
+                    scanned.append(path)
+        except OSError:
+            continue
+
+    return sorted(scanned, key=_font_priority)
+
+
+@lru_cache(maxsize=1)
+def _get_cjk_font_path() -> Optional[str]:
+    """Find a CJK font on Linux, macOS, or Windows for rendered text matching."""
+    for path in _iter_env_font_paths():
+        if path.is_file():
+            return str(path)
+
+    for candidate in _iter_explicit_font_candidates():
+        if candidate.is_file():
+            return str(candidate)
+
+    for candidate in _iter_scanned_font_candidates():
+        if candidate.is_file():
+            return str(candidate)
+
+    return None
 
 
 def _render_char(char: str, size: int = 48) -> np.ndarray:
     """将单个字符渲染为白底黑字图片，返回 BGR numpy 数组"""
     img = Image.new('RGB', (size, size), (255, 255, 255))
     draw = ImageDraw.Draw(img)
-    font = _find_cjk_font(size - 8)
+    font_path = _get_cjk_font_path()
+    try:
+        if not font_path:
+            raise OSError("No CJK font found")
+        font = ImageFont.truetype(font_path, size - 8)
+    except OSError:
+        warnings.warn(
+            "No usable CJK font found; falling back to Pillow default font. "
+            "Set GLM_CODING_CJK_FONT or CAPTCHA_CJK_FONT to a Chinese-capable .ttf/.ttc/.otf file.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        font = ImageFont.load_default()
     bbox = draw.textbbox((0, 0), char, font=font)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     draw.text(((size - tw) / 2, (size - th) / 2 - bbox[1]), char, fill=(0, 0, 0), font=font)
